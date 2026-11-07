@@ -6,6 +6,7 @@ for GitHub Copilot.
 claude/     Claude Code: skills, agents, hooks, mods
 copilot/    GitHub Copilot port (custom agents, Agent Skills, prompt files, CLI plugin)
 plugins.md  third-party Claude Code plugins I use
+learning-loop.md  how review findings become lessons for the next change
 ```
 
 ## What's inside
@@ -17,7 +18,9 @@ Located in `claude/skills/`. Each skill is a `SKILL.md` that Claude loads when i
 |---|---|---|
 | **feature** | manual only: `/feature <plan.md \| issue #>` | Orchestrates a whole feature from an existing plan by driving subagents (see below). |
 | **model-selector** | before delegating any work | Picks the subagent type first (`git-runner`, `os-agent`, `test-runner`, `code-agent`, `code-review`, …), then the model tier (Haiku → Sonnet → Opus → Fable). Production code is always written and reviewed on Opus. Hints `/model` when the main-thread model is a poor fit. |
-| **quality-bar** | implementing or reviewing code | Shared quality standard (security, correctness, error handling, concurrency, performance, architecture, tests, docs) with Critical/High/Medium/Low severities. `code-agent` builds to it, `code-review` judges against it. Critical and High must be zero before hand-off. |
+| **quality-bar** | implementing or reviewing code | Shared quality standard (security, correctness, error handling, concurrency, performance, architecture, tests, docs) with Critical/High/Medium/Low severities. `code-agent` builds to it, `code-review` judges against it. Critical and High must be zero before hand-off. Section 8 and the stack-split catalog (`review-lessons-{general,rust,frontend,sql}.md`) hold lessons from past reviews, with hard caps (section 8 ≤60, catalog section ≤30, file ≤150). |
+| **learn-from-review** | after `comprehensive-review:full-review`, or `/learn-from-review` | Turns a finished review's `.full-review/` findings into general lessons in the `quality-bar` store: dedupes, enforces caps, marks processed reviews in `.full-review/lessons-recorded`. |
+| **lessons-compact** | `/lessons-compact [--dry-run]`, when a cap passes 90% or monthly | Compacts the lesson store: merges duplicates, fixes misplaced rules, brings files under cap after user approval, lists rules that could become lint/CI checks. |
 | **commit-clean** | writing a commit message | Git commit messages with no AI attribution (no `Co-Authored-By: Claude`, no "Generated with" lines), Conventional Commits format. |
 | **create-worktree** | "create a worktree", isolated work | Creates git worktrees under `worktrees/` inside the project root, never as sibling directories. |
 | **csharp-style** | writing or editing C# | Explicit types (no `var`), XML doc comments on public/internal members, braces on all `if`/loops, explicit created types (no `new()`). |
@@ -142,14 +145,17 @@ Same loop, as the orchestrator sees it: every agent reports back to the orchestr
 └────────────────────────────────────┘
 ```
 
+### Learning loop
+Review findings become short, general lessons stored globally in the `quality-bar` skill (section 8 plus `review-lessons-{general,rust,frontend,sql}.md`), which `planning`, `code-agent` and `code-review` read before every change. `code-review` records lessons itself; `/learn-from-review` records them after `comprehensive-review:full-review`; `/lessons-compact` keeps the store under its caps. Diagrams and the full file list: [learning-loop.md](learning-loop.md).
+
 ### Agents
 Located in `claude/agents/` (Copilot: `copilot/agents/*.agent.md`). Each runs on a fixed model.
 
 | Agent | Model | What it does |
 |---|---|---|
 | **code-agent** | Opus | Implements one part of a plan to the `quality-bar` standard, with a risk analysis and self-review. |
-| **code-review** | Opus | Read-only review of a change against `quality-bar`; returns PASS/FAIL with severity-ranked findings. |
-| **planning** | Opus | Breaks a plan into small, ordered, self-contained parts in `plan.md`. |
+| **code-review** | Opus | Read-only review of a change against `quality-bar` and its lessons; returns PASS/FAIL with severity-ranked findings and records new lessons in the global `quality-bar` store (its only writable files). |
+| **planning** | Opus | Breaks a plan into small, ordered, self-contained parts in `plan.md`, with per-part decisions (failure policy, state paths, bounds, tests) drawn from the `quality-bar` lessons, and lists open decisions for the user. |
 | **test-planner** | Opus | Plans test coverage (file, test names, intent) without writing code. |
 | **test-implementer** | Haiku | Writes tests from a test plan and runs them for the touched package. |
 | **test-writer** | Haiku | Writes test code from a test plan (no running). |

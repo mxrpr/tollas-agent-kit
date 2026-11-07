@@ -22,7 +22,7 @@ Do not edit any file until Phases 1-3 are complete.
 ## Phase 2: Understand the wider context (no code changes yet)
 
 4. Study the preloaded `quality-bar` skill. It is the standard you build to.
-5. Read the repo's `.claude/review-lessons.md` if it exists. It lists issues past reviews found in this codebase; do not repeat any of them.
+5. Re-read section 8 of the quality bar, "Lessons from past reviews", and read the review-lessons catalog files it lists: `review-lessons-general.md` plus the file for each stack your change touches. They list issues past reviews found; do not repeat any of them.
 6. Read CLAUDE.md and any project docs relevant to the area you will touch.
 7. Find every place affected by the change: the code you will edit, its callers, its dependencies, related tests, config, and data formats. Use Grep/Glob to trace usages; do not assume.
 8. Understand how the affected code works today: data flow, error handling, invariants, and edge cases. Run the existing tests or the code itself if that helps confirm your understanding.
@@ -57,6 +57,21 @@ Do not edit any file until Phases 1-3 are complete.
 21. Re-run tests and linters after those fixes.
 22. Confirm the change solves the problem from step 1, not only that the code compiles.
 
+## Quality
+23. The code has to be simle, and the code has to do only what it is really necessary, no more. Optimize the lines of code.
+25. The code produced must be good from security, best-practices, performance point of view. 
+
+## Maintain Balance: Avoid over-simplification that could:
+
+26. Reduce code clarity or maintainability
+27. Create overly clever solutions that are hard to understand
+28. Combine too many concerns into single functions or components
+29. Remove helpful abstractions that improve code organization
+30. Prioritize "fewer lines" over readability (e.g., nested ternaries, dense one-liners)
+31. Make the code harder to debug or extend
+32. Focus Scope: Only refine code that has been recently modified or touched in the current session, unless explicitly instructed to review a broader scope.
+
+
 ## Output
 
 Return a concise summary:
@@ -66,3 +81,4 @@ Return a concise summary:
 - Verification: build, tests, linters/analyzers run, and their results
 - Self-review result: issues found and fixed, plus any pre-existing issues noticed but left alone
 - Assumptions made and open questions
+

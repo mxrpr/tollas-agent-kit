@@ -84,3 +84,87 @@ Medium unless it hides a breaking change (then High):
 High if violated:
 - [ ] The project builds with no new warnings.
 - [ ] The project's linters, formatters and static analyzers pass on changed files (e.g. clippy, eslint, ruff, mypy, semgrep, `dotnet build -warnaserror`, `go vet`), when the project has them.
+
+## 8. Lessons from past reviews
+
+Patterns that past comprehensive reviews flagged High or Medium, often more than once. The implementation agent must not repeat them. The review agent rates any repeat as at least High.
+
+This section holds the most important lessons.
+
+### Catalog and caps
+The complete catalog, all severities, is split by stack in this skill's directory (`~/.claude/skills/quality-bar/`):
+- `review-lessons-general.md`: language-agnostic; read for every change.
+- `review-lessons-rust.md`: Rust backend.
+- `review-lessons-frontend.md`: React/TypeScript frontend.
+- `review-lessons-sql.md`: SQL, databases and migrations.
+
+Read the general file plus the file for each stack the change touches.
+
+Hard caps, enforced by whoever writes a lesson:
+- Section 8: at most 60 rules.
+- Each catalog section (`##`): at most 30 rules.
+- Each catalog file: at most 150 rules.
+
+A new lesson that would exceed a cap is not appended. Instead, merge it into the closest existing rule, or generalize two or more existing rules into one, so the count stays at or below the cap. Never drop a High rule to make room; merge Low rules first. When any count passes 90% of its cap, run the `lessons-compact` skill. A new stack file (e.g. `review-lessons-python.md`) may be created when a lesson fits no existing file; add it to the list above.
+
+### External calls, retries and partial failure
+- [ ] Every upstream error is classified as transient (retry), permanent for one item (skip and count), or fatal (authentication, exhausted rate limit: abort the run). A per-item skip never swallows a fatal error.
+- [ ] Any skip, truncation, page cap or failed sub-fetch is reported as partial or incomplete, never as a clean success. One failed sub-list does not discard its siblings.
+- [ ] A dropped connection or timeout while reading a body is transient; only a real decode error counts as a bad payload.
+- [ ] Optional or cosmetic enrichment calls get no rate-limit retries and stop for the rest of the run after the first rate limit.
+- [ ] A retry or restart gets its own request/page budget, so the retry alone can still finish a maximal valid run.
+- [ ] When a deadline cancels in-flight work that was already paid for (rate limiter, quota), keep or cache what already arrived.
+- [ ] Fallback and live-read paths get a short timeout and no default retries; every HTTP, SMTP and DB call has a timeout.
+- [ ] 4xx is not "permanent" as a class: 408/409/423/425/429, connection reset and body-read timeout are transient.
+- [ ] A failed lookup never overwrites or blanks a previously stored value; keep the old value or surface the failure.
+- [ ] Field types and shapes of an external API come from its docs or a recorded response, never a guess; when they disagree, accept both shapes.
+- [ ] When an upstream payload loses fields, list every field the consumers read and restore all of them, not only the visible symptom.
+- [ ] When a direct lookup is replaced by a search endpoint, pin the search's implicit filters (active-only, visibility, limits) explicitly.
+- [ ] An input allowlist in front of an external system matches what that system accepts (or a safe superset), never a narrower guess.
+
+### Bounds and performance
+- [ ] Every list call pages to the end or has an explicit, logged cap; every page loop has a max-pages and repeated-token guard.
+- [ ] User-controlled ranges (days, items) have a maximum; expensive queries have a statement timeout; expensive routes have a concurrency limit.
+- [ ] Never sort, window or DISTINCT rows that carry a large payload column (JSON blobs): sort narrow keys, then join the payload.
+- [ ] Batch writes are one set-based statement (e.g. `UNNEST`), not a per-row loop inside a transaction.
+- [ ] In-process caches and limiters assume a single replica; state it, or keep the state shared.
+
+### Correctness and data integrity
+- [ ] Stored timestamps come from the item's own event data, never from sync or observation time.
+- [ ] Dedup keys use stable identity, never a type derived from the item's current status (output must not depend on when the sync saw it).
+- [ ] Retry and backoff clocks advance only on real attempts; failed, skipped or swallowed ticks neither reset nor age them.
+- [ ] Date and number arithmetic on user input uses checked operations; no user-reachable panic or overflow.
+- [ ] Every path that changes a given state (create, enable, re-enable, link, role change) triggers the same side effects (sync, reset, cache invalidation). Grep every writer of that state.
+- [ ] A guard or lock added to one writer goes on every writer of the same data, written once in a shared helper, and each writer is tested.
+- [ ] Rows from several tables are locked in one global order; same-table rows are locked `ORDER BY id`.
+- [ ] Before a delete, check what cascades; never silently erase records that other features treat as history.
+- [ ] Comments next to changed code still match it (e.g. a "no lock needed" comment after adding a lock).
+- [ ] Untrusted text (titles, descriptions) placed into LLM prompts goes through the project's sanitizer.
+- [ ] Scoping and authorization filters (tenant, project allowlist) go through one chokepoint, not repeated per query.
+
+### Frontend
+- [ ] Use `||`, not `??`, when an empty string also means "missing".
+- [ ] After a mutation, invalidate every query that displays the changed data.
+- [ ] Conflict (409) and validation errors are shown to the user in the form or dialog that caused them.
+
+### Single source of truth
+- [ ] No hand-kept list that mirrors an enum or registry; derive it from the enum or registry.
+- [ ] Before writing a mapping (status code to error, tag constants, labels), grep for an existing one and reuse or extract it.
+- [ ] A payload one component writes and another reads (plugin to plugin, backend to frontend) has a contract test.
+
+### Tests
+- [ ] Wiring: a new helper is exercised through the real entry point (job, fetch function, route), so removing the call turns a test red. A helper tested only in isolation does not count.
+- [ ] Every role-restricted route has a test that each lower role is refused (status and body), including the role just below the gate, paired with the allowed role succeeding.
+- [ ] Every timeout, deadline, early-exit, give-up and failure branch has a test that reaches it, with data where the exit is not also the natural end of the input.
+- [ ] Each guard is proven red on its own; one red test through one guard proves nothing about the others.
+- [ ] Mocks do not encode the change's own assumption about an external API; mock shapes come from docs or recorded responses, and frontend mocks use the error shape the backend really sends.
+- [ ] DB-backed tests fail loudly or report themselves as skipped when no database is present; they never pass silently or fall back to a dev database URL.
+- [ ] When tuples become parallel arrays, the test data varies every paired column, so a misaligned or cross-joined result fails.
+- [ ] Never write a test that pins known-bad behavior as intended.
+
+### Logging
+- [ ] Logs carry tenant and entity ids, not usernames, emails, connection strings or secrets.
+
+### Branch readiness
+- [ ] Lint and build against the target branch's current rules (rebase-check), not the merge-base's.
+- [ ] Re-check migration numbers for collisions with the target branch. A migration squash does not rely on `CREATE TABLE IF NOT EXISTS` to upgrade partially migrated databases. Indexes on large tables are built without a long table lock. Code does not require a migration the deploy may not have run.
